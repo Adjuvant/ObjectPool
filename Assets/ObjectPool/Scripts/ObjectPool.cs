@@ -112,9 +112,9 @@ public sealed class ObjectPool : MonoBehaviour
 			{
 				while (obj == null && list.Count > 0)
 				{
-					obj = list[0];
-					list.RemoveAt(0);
-				}
+                    obj = list[list.Count - 1];
+                    list.RemoveAt(list.Count - 1);
+                }
 				if (obj != null)
 				{
 					trans = obj.transform;
