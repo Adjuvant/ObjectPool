@@ -16,15 +16,17 @@ namespace Pooling
         }
 
         static ObjectPool _instance;
-        static List<GameObject> tempList = new List<GameObject>();
+        static Stack<GameObject> tempList = new Stack<GameObject>();
 
-        Dictionary<GameObject, List<GameObject>> pooledObjects = new Dictionary<GameObject, List<GameObject>>();
+        Dictionary<GameObject, Stack<GameObject>> pooledObjects = new Dictionary<GameObject, Stack<GameObject>>();
         //Dictionary<GameObject, GameObject> spawnedObjects = new Dictionary<GameObject, GameObject>();
 
         public StartupPoolMode startupPoolMode;
         public StartupPool[] startupPools;
-
+        static int DEFAULT_POOL_SIZE = 5;
         bool startupPoolsCreated;
+
+
         #endregion
 
         #region Setup
@@ -61,7 +63,7 @@ namespace Pooling
         {
             if (prefab != null && !instance.pooledObjects.ContainsKey(prefab))
             {
-                var list = new List<GameObject>();
+                var list = new Stack<GameObject>(initialPoolSize);
                 instance.pooledObjects.Add(prefab, list);
 
                 if (initialPoolSize > 0)
@@ -72,9 +74,8 @@ namespace Pooling
                     {
                         var obj = Instantiate(prefab);
                         obj.transform.SetParent(instance.transform, false); // worldPositionStays=false to keep UI objects spawning consistently
-                        var recycler = obj.AddComponent<PoolObject>();
-                        recycler.PrefabType = prefab;
-                        list.Add(obj);
+                        obj.AddComponent<PoolObject>().PrefabType = prefab;
+                        list.Push(obj);
                     }
                     prefab.SetActive(active);
                 }
@@ -112,20 +113,16 @@ namespace Pooling
         #region Spawn GameObjects
         public static GameObject Spawn(GameObject prefab, Transform parent, Vector3 position, Quaternion rotation)
         {
-            var list = new List<GameObject>();
+            var list = new Stack<GameObject>();
             Transform trans;
             GameObject obj = null;
-            CreatePool(prefab.gameObject, 0); // will create pool if none exists
+            CreatePool(prefab.gameObject, DEFAULT_POOL_SIZE); // will create pool if none exists
             if (instance.pooledObjects.TryGetValue(prefab, out list))
             {
                 obj = null;
                 if (list.Count > 0)
                 {
-                    for (int i = list.Count - 1; i >= 0; i--) // Count in from the bottom of the list
-                    {
-                        if (!list[i].activeInHierarchy)
-                            obj = list[i];
-                    }
+                    obj = list.Pop();
 
                     if (obj != null)
                     {
@@ -207,6 +204,7 @@ namespace Pooling
         {
             obj.transform.SetParent(instance.transform, false); // worldPositionStays=false to keep UI objects spawning consistently
             obj.SetActive(false);
+            instance.pooledObjects[prefab].Push(obj);
         }
 
         public static void RecycleAll<T>(T prefab) where T : Component
@@ -257,7 +255,7 @@ namespace Pooling
 
         public static int CountPooled(GameObject prefab)
         {
-            List<GameObject> list;
+            Stack<GameObject> list;
             if (instance.pooledObjects.TryGetValue(prefab, out list))
                 return list.Count;
             return 0;
@@ -291,23 +289,23 @@ namespace Pooling
                 list = new List<GameObject>();
             if (!appendList)
                 list.Clear();
-            List<GameObject> pooled;
+            Stack<GameObject> pooled;
             if (instance.pooledObjects.TryGetValue(prefab, out pooled))
                 list.AddRange(pooled);
             return list;
         }
-        public static List<T> GetPooled<T>(T prefab, List<T> list, bool appendList) where T : Component
-        {
-            if (list == null)
-                list = new List<T>();
-            if (!appendList)
-                list.Clear();
-            List<GameObject> pooled;
-            if (instance.pooledObjects.TryGetValue(prefab.gameObject, out pooled))
-                for (int i = 0; i < pooled.Count; ++i)
-                    list.Add(pooled[i].GetComponent<T>());
-            return list;
-        }
+        //public static List<T> GetPooled<T>(T prefab, List<T> list, bool appendList) where T : Component
+        //{
+        //    if (list == null)
+        //        list = new List<T>();
+        //    if (!appendList)
+        //        list.Clear();
+        //    Stack<GameObject> pooled;
+        //    if (instance.pooledObjects.TryGetValue(prefab.gameObject, out pooled))
+        //        for (int i = 0; i < pooled.Count; ++i)
+        //            list.Add(pooled.Peek().GetComponent<T>());
+        //    return list;
+        //}
 
         //public static List<GameObject> GetSpawned(GameObject prefab, List<GameObject> list, bool appendList)
         //{
@@ -338,11 +336,11 @@ namespace Pooling
         #region Destroy Pools
         public static void DestroyPooled(GameObject prefab)
         {
-            List<GameObject> pooled;
+            Stack<GameObject> pooled;
             if (instance.pooledObjects.TryGetValue(prefab, out pooled))
             {
                 for (int i = 0; i < pooled.Count; ++i)
-                    Destroy(pooled[i]);
+                    Destroy(pooled.Pop());
                 pooled.Clear();
             }
         }
@@ -526,18 +524,18 @@ namespace Pooling
         {
             return ObjectPool.GetPooled(prefab, null, false);
         }
-        public static List<T> GetPooled<T>(this T prefab, List<T> list, bool appendList) where T : Component
-        {
-            return ObjectPool.GetPooled(prefab, list, appendList);
-        }
-        public static List<T> GetPooled<T>(this T prefab, List<T> list) where T : Component
-        {
-            return ObjectPool.GetPooled(prefab, list, false);
-        }
-        public static List<T> GetPooled<T>(this T prefab) where T : Component
-        {
-            return ObjectPool.GetPooled(prefab, null, false);
-        }
+        //public static List<T> GetPooled<T>(this T prefab, List<T> list, bool appendList) where T : Component
+        //{
+        //    return ObjectPool.GetPooled(prefab, list, appendList);
+        //}
+        //public static List<T> GetPooled<T>(this T prefab, List<T> list) where T : Component
+        //{
+        //    return ObjectPool.GetPooled(prefab, list, false);
+        //}
+        //public static List<T> GetPooled<T>(this T prefab) where T : Component
+        //{
+        //    return ObjectPool.GetPooled(prefab, null, false);
+        //}
 
         public static void DestroyPooled(this GameObject prefab)
         {
