@@ -1,6 +1,8 @@
 ﻿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
+
 namespace Pooling
 {
     public sealed class ObjectPool : MonoBehaviour
@@ -19,7 +21,7 @@ namespace Pooling
         static Stack<GameObject> tempList = new Stack<GameObject>();
 
         Dictionary<GameObject, Stack<GameObject>> pooledObjects = new Dictionary<GameObject, Stack<GameObject>>();
-        //Dictionary<GameObject, GameObject> spawnedObjects = new Dictionary<GameObject, GameObject>();
+        Dictionary<GameObject, Stack<GameObject>> relayPools = new Dictionary<GameObject, Stack<GameObject>>();
 
         public StartupPoolMode startupPoolMode;
         public StartupPool[] startupPools;
@@ -63,19 +65,21 @@ namespace Pooling
         {
             if (prefab != null && !instance.pooledObjects.ContainsKey(prefab))
             {
-                var list = new Stack<GameObject>(initialPoolSize);
-                instance.pooledObjects.Add(prefab, list);
+                var poolList = new Stack<GameObject>(initialPoolSize);
+                var relayList = new Stack<GameObject>();
+                instance.pooledObjects.Add(prefab, poolList);
+                instance.relayPools.Add(prefab, relayList);
 
                 if (initialPoolSize > 0)
                 {
                     bool active = prefab.activeSelf;
                     prefab.SetActive(false);
-                    while (list.Count < initialPoolSize)
+                    while (poolList.Count < initialPoolSize)
                     {
                         var obj = Instantiate(prefab);
                         obj.transform.SetParent(instance.transform, false); // worldPositionStays=false to keep UI objects spawning consistently
                         obj.AddComponent<PoolObject>().PrefabType = prefab;
-                        list.Push(obj);
+                        poolList.Push(obj);
                     }
                     prefab.SetActive(active);
                 }
@@ -204,7 +208,7 @@ namespace Pooling
         {
             obj.transform.SetParent(instance.transform, false); // worldPositionStays=false to keep UI objects spawning consistently
             obj.SetActive(false);
-            instance.pooledObjects[prefab].Push(obj);
+            instance.relayPools[prefab].Push(obj);
         }
 
         public static void RecycleAll<T>(T prefab) where T : Component
@@ -358,10 +362,32 @@ namespace Pooling
         {
             DestroyAll(prefab.gameObject);
         }
-        #endregion
+		#endregion
 
-        #region Singleton
-        public static ObjectPool instance
+		#region Relay
+        void LateUpdate()
+		{
+            StartCoroutine(RelayPools());
+		}
+
+        IEnumerator RelayPools()
+        {
+            yield return new WaitForEndOfFrame();
+            foreach (var kvp in relayPools.Where(kvp => kvp.Value.Count > 0))
+            {
+                var prefab = kvp.Key;
+                var stack = kvp.Value;
+                while (stack.Count > 0)
+                {
+                    Debug.Log("Moved from relay to pool");
+                    instance.pooledObjects[prefab].Push(stack.Pop());
+                }
+            }
+        }
+		#endregion
+
+		#region Singleton
+		public static ObjectPool instance
         {
             get
             {
